@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHeaderView,
     QTreeView,
+    QListWidget,
+    QToolBox,
 )
 from PySide6 import QtGui
 from PySide6.QtGui import (
@@ -344,6 +346,9 @@ class MainWindow(QMainWindow):
         self.is_paused = False
         self.proxy_model = None
 
+        # Toolbox
+        self.fault_toolbox = QToolBox()
+
         # Buttons
         self.start_button = QPushButton("Start")
         self.pause_button = QPushButton("Pause")
@@ -352,6 +357,7 @@ class MainWindow(QMainWindow):
         self.export_downtime_button = QPushButton("Export Downtime Events")
         self.get_tags_button = QPushButton("Get Tag List")
         self.add_fault_tag_button = QPushButton('Add Selected')
+        self.remove_fault_tag_button = QPushButton('Remove Selected')
 
         # Labels
         self.quality = QLabel("Quality: 0%")
@@ -372,6 +378,9 @@ class MainWindow(QMainWindow):
         self.rejects_tag = QLineEdit()
         self.total_parts_tag = QLineEdit()
         self.tree_filter = QLineEdit()
+
+        #Lists
+        self.fault_tag_list = QListWidget()
 
         # Timers
         self.timer = QTimer()
@@ -491,13 +500,18 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.downtime_button)
         self.main_layout.addWidget(self.export_downtime_button)
         self.main_layout.addWidget(self.table_view)
+        self.toolbox_main_layout = QVBoxLayout()
         self.fault_tag_layout = QHBoxLayout()
         self.fault_tag_layout.addWidget(self.tree_filter)
         self.fault_tag_layout.addWidget(self.add_fault_tag_button)
-        self.main_layout.addLayout(self.fault_tag_layout)
-
-        self.main_layout.addWidget(self.tree_filter)
-        self.main_layout.addWidget(self.tree)
+        self.fault_tag_layout.addWidget(self.remove_fault_tag_button)
+        self.tag_layout = QHBoxLayout()
+        self.tag_layout.addWidget(self.tree)
+        self.tag_layout.addWidget(self.fault_tag_list)
+        self.toolbox_main_layout.addLayout(self.fault_tag_layout)
+        self.toolbox_main_layout.addLayout(self.tag_layout)
+        self.main_layout.addLayout(self.toolbox_main_layout)
+        self.main_layout.addWidget(self.fault_toolbox)
         self.main_layout.addWidget(self.footer_label)
 
         self.quality.setAlignment(QtGui.Qt.AlignCenter)
@@ -537,6 +551,8 @@ class MainWindow(QMainWindow):
             lambda: self.get_tags_clicked())
         self.add_fault_tag_button.clicked.connect(
             lambda: self.add_fault_tag_clicked())
+        self.remove_fault_tag_button.clicked.connect(
+            lambda: self.remove_fault_tag_clicked())
         
         # Set central widget
         widget = QWidget()
@@ -544,25 +560,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(widget)
     
         self.fault_tags = []
-        self.fault_tags_list = []
-
-    def handle_tag_selection(self, index):
-        indexes = self.tree.selectedIndexes()
-
-        selected_tags = []
-
-        for index in indexes:
-            source_index = self.proxy_model.mapToSource(index)
-            item = self.proxy_model.sourceModel().itemFromIndex(source_index)
-            tag_path = item.data(Qt.UserRole)
-            
-            if tag_path:
-                selected_tags.append(tag_path)
-
-        print(selected_tags)
-        self.fault_tags = selected_tags
-
-        return selected_tags
 
     def downtime_clicked(self):
         now = round_to_nearest_second(datetime.now())
@@ -746,14 +743,44 @@ class MainWindow(QMainWindow):
             self.tree.setModel(self.proxy_model)
             self.tree_filter.textChanged.connect(self.proxy_model.setFilterFixedString)
 
-            self.tree.clicked.connect(self.handle_tag_selection)
+            #self.tree.clicked.connect(self.handle_tag_selection)
 
     def add_fault_tag_clicked(self):
-        for tag in self.fault_tags:
-            if tag not in self.fault_tags_list:
-                self.fault_tags_list.append(tag)
+        indexes = self.tree.selectedIndexes()
+        seen = set()
 
-        print(self.fault_tags_list)
+        for index in indexes:
+            source_index = self.proxy_model.mapToSource(index)
+            item = self.proxy_model.sourceModel().itemFromIndex(source_index)
+            data = item.data(Qt.UserRole)
+            tag_path = data[0]
+
+            if tag_path and tag_path not in seen:
+                seen.add(tag_path)
+
+                if not self.fault_tag_list.findItems(tag_path, Qt.MatchExactly):
+                    self.fault_tag_list.addItem(tag_path)
+                    if data[1][0] > 0:
+                        array_length = data[1][0]
+                        tag_to_read = f"{data[0]}{{{array_length}}}"
+                    else:
+                        tag_to_read = tag_path
+                    self.fault_tags.append(tag_to_read)
+
+                    print(self.fault_tags)
+        
+    def remove_fault_tag_clicked(self):
+        for item in self.fault_tag_list.selectedItems():
+            row = self.fault_tag_list.row(item)
+            self.fault_tag_list.takeItem(row)
+            tag_str = item.text()
+            
+            for stored_tag in self.fault_tags:
+                base_name = stored_tag.split("{")[0]
+                if base_name == tag_str:
+                    self.fault_tags.remove(stored_tag)
+                    print(self.fault_tags)
+
 
 
     def read_history(self):

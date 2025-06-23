@@ -369,6 +369,7 @@ class MainWindow(QMainWindow):
         self.calculated_rate = QLabel("Calculated Rate: 0.00 seconds per part")
         self.time = QLabel('Run Not Started')
         self.footer_label = QLabel()
+        self.fault_tag_list_label = QLabel("Fault Tag List")
 
         # Line Edits
         self.ip_input = QLineEdit()
@@ -415,6 +416,7 @@ class MainWindow(QMainWindow):
         self.downtime_button.setEnabled(False)
         self.pause_button.setEnabled(False)
         self.stop_button.setEnabled(False)
+        self.export_downtime_button.setEnabled(False)
 
         # Set placeholder text
         self.rejects.setPlaceholderText("Enter Rejects")
@@ -464,6 +466,11 @@ class MainWindow(QMainWindow):
         oee_components_font.setPointSize(16)
         self.oee_components.setFont(oee_components_font)
 
+        fault_tag_list_label_font = self.fault_tag_list_label.font()
+        fault_tag_list_label_font.setBold(True)
+        fault_tag_list_label_font.setPointSize(14)
+        self.fault_tag_list_label.setFont(fault_tag_list_label_font)
+
         # Create empty and status variables
         self.logging_downtime = False
         self.downtime_start_time = None
@@ -472,15 +479,19 @@ class MainWindow(QMainWindow):
         self.downtime_end_time_str = None
 
         # Create layouts and add wigets
-        self.main_layout = QVBoxLayout()
+        self.main_layout = QHBoxLayout()
+        self.main_layout_left = QVBoxLayout()
+        self.main_layout_right = QVBoxLayout()
         self.hor_layout = QHBoxLayout()
         self.part_count_layout = QHBoxLayout()
+        self.fault_tag_list_button_layout = QHBoxLayout()
         self.plc_layout = QHBoxLayout()
+        self.results_layout = QVBoxLayout()
 
         self.plc_layout.addWidget(self.ip_input)
         self.plc_layout.addWidget(self.get_tags_button)
-        self.main_layout.addLayout(self.plc_layout)
-        self.main_layout.addWidget(self.time)
+        self.main_layout_left.addWidget(self.time)
+        self.user_entry_layout = QHBoxLayout()
 
         self.part_count_layout.addWidget(QLabel('Rejects:'))
         self.part_count_layout.addWidget(self.rejects)
@@ -491,28 +502,23 @@ class MainWindow(QMainWindow):
 
         self.part_count_layout.addStretch()
 
-        self.user_entry_layout = QHBoxLayout()
         self.user_entry_layout.addWidget(self.rejects_tag)
         self.user_entry_layout.addWidget(self.total_parts_tag)
 
-        self.main_layout.addLayout(self.part_count_layout)
-        self.main_layout.addLayout(self.user_entry_layout)
-        self.main_layout.addWidget(self.downtime_button)
-        self.main_layout.addWidget(self.export_downtime_button)
-        self.main_layout.addWidget(self.table_view)
-        self.toolbox_main_layout = QVBoxLayout()
-        self.fault_tag_layout = QHBoxLayout()
-        self.fault_tag_layout.addWidget(self.tree_filter)
-        self.fault_tag_layout.addWidget(self.add_fault_tag_button)
-        self.fault_tag_layout.addWidget(self.remove_fault_tag_button)
-        self.tag_layout = QHBoxLayout()
-        self.tag_layout.addWidget(self.tree)
-        self.tag_layout.addWidget(self.fault_tag_list)
-        self.toolbox_main_layout.addLayout(self.fault_tag_layout)
-        self.toolbox_main_layout.addLayout(self.tag_layout)
-        self.main_layout.addLayout(self.toolbox_main_layout)
-        self.main_layout.addWidget(self.fault_toolbox)
-        self.main_layout.addWidget(self.footer_label)
+        self.main_layout_left.addLayout(self.part_count_layout)
+        self.main_layout_left.addLayout(self.user_entry_layout)
+        self.main_layout_left.addWidget(self.downtime_button)
+        self.main_layout_left.addWidget(self.export_downtime_button)
+        self.main_layout_left.addWidget(self.table_view)
+        self.main_layout_right.addLayout(self.plc_layout)
+        self.main_layout_right.addWidget(self.tree_filter)
+        self.main_layout_right.addWidget(self.tree)
+        self.main_layout_right.addWidget(self.fault_tag_list_label)
+        self.fault_tag_list_button_layout.addWidget(self.add_fault_tag_button)
+        self.fault_tag_list_button_layout.addWidget(self.remove_fault_tag_button)
+        self.main_layout_right.addLayout(self.fault_tag_list_button_layout)
+        self.main_layout_right.addWidget(self.fault_tag_list)
+        self.main_layout_left.addWidget(self.footer_label)
 
         self.quality.setAlignment(QtGui.Qt.AlignCenter)
         self.availability.setAlignment(QtGui.Qt.AlignCenter)
@@ -521,17 +527,18 @@ class MainWindow(QMainWindow):
         self.oee.setAlignment(QtGui.Qt.AlignCenter)
         self.calculated_rate.setAlignment(QtGui.Qt.AlignCenter)
 
-
-        self.results_layout = QVBoxLayout()
         self.results_layout.addWidget(self.oee)
         self.results_layout.addWidget(self.oee_components)
         self.results_layout.addWidget(self.calculated_rate)
         self.results_layout.setAlignment(QtGui.Qt.AlignCenter)
-        self.main_layout.addLayout(self.results_layout)
+        self.main_layout_left.addLayout(self.results_layout)
         self.hor_layout.addWidget(self.start_button)
         self.hor_layout.addWidget(self.stop_button)
         self.hor_layout.addWidget(self.pause_button)
-        self.main_layout.addLayout(self.hor_layout)
+        self.main_layout_left.addLayout(self.hor_layout)
+
+        self.main_layout.addLayout(self.main_layout_left)
+        self.main_layout.addLayout(self.main_layout_right)
 
         self.read_history()
         
@@ -576,6 +583,7 @@ class MainWindow(QMainWindow):
             self.model.layoutChanged.emit()
             self.logging_downtime = False
             self.downtime_button.setText("Record Downtime")
+            self.export_downtime_button.setEnabled(True)
             self.update_footer()
 
     def start_clicked(self):
@@ -718,11 +726,20 @@ class MainWindow(QMainWindow):
         events = []
 
         for event in self.events:
-            events.append([event.start_time, event.end_time, event.duration, event.cause, event.nmr])
+            start_timedelta = event.start_time - self.run_start_time
+            stop_timedelta =  event.end_time - self.run_start_time
+            
+            if event.nmr:
+                nmr = "NMR"
+            else:
+                nmr = "MR"
+
+            events.append([start_timedelta, stop_timedelta, event.duration, event.cause, nmr])
 
         try:
             with open('output.csv', 'w', newline='') as file:
                 writer = csv.writer(file)
+                writer.writerow(['Start Time', 'End Time', 'Duration', 'Description', 'Machine Related or Non-Machine Related'])
                 writer.writerows(events)
             print("List successfully written to output.csv")
         except IOError:
